@@ -10,12 +10,12 @@
 		{
 			"name": "cmake-debug",
 			"working_dir": "${project_path}/bin/Debug",
-			"shell_cmd": "cmake ../.. -DCMAKE_BUILD_TYPE=Debug & make"
+			"shell_cmd": "cmake ../.. -DCMAKE_BUILD_TYPE=Debug && make"
 		},
 		{
 			"name": "cmake-release",
 			"working_dir": "${project_path}/bin/Release",
-			"shell_cmd": "cmake ../.. -DCMAKE_BUILD_TYPE=Release & make"
+			"shell_cmd": "cmake ../.. -DCMAKE_BUILD_TYPE=Release && make"
 		},
 	]
 }
