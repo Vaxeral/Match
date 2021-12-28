@@ -4,6 +4,7 @@
 #include <SDL_image.h>
 
 #include <time.h>
+#include <stdlib.h>
 
 int match_init(SDL_Window **window, SDL_Renderer **renderer);
 int match_events_handle(void);
@@ -17,39 +18,118 @@ int main(int argc, char const *argv[])
 
 	struct MatchTexture texture; 
 	match_texture_load(&texture, renderer, "resources/yellow-wolly-wog.png");
+	struct MatchTexture gem_texture_atlas;
+	match_texture_load(&gem_texture_atlas, renderer, "resources/match-gem-texture-atlas.png");
 
 	struct MatchKeyboard keyboard;
 	match_keyboard_init(&keyboard);
+
+	struct MatchGemBoard gem_board;
+	match_gem_board_init(&gem_board, 32, 16, 16);
+
+	int match_gem_board_top_gap = MATCH_GEM_KIND_CLIP_RECT_HEIGHT / 2;
+
+	struct MatchTexture gem_board_texture_buffer;
+	match_texture_init(
+		&gem_board_texture_buffer, 
+		renderer, 
+		SDL_PIXELFORMAT_RGBA32, 
+		SDL_TEXTUREACCESS_TARGET, 
+		MATCH_GEM_KIND_CLIP_RECT_WIDTH * gem_board.columns,
+		MATCH_GEM_KIND_CLIP_RECT_HEIGHT * gem_board.visible_rows + match_gem_board_top_gap);
+
+	srand(time(NULL));
+	for(int i = 0; i < gem_board.columns * gem_board.visible_rows; i++)
+	{
+		gem_board.state[i] = (struct MatchGemState){
+			// (i / gem_board.columns % 2 == 0) ? rand() % (MATCH_GEM_KIND_COUNT - 1) + 1 : 0,
+			(rand() % 50 > 25) ? 0 : (rand() % MATCH_GEM_KIND_COUNT - 1) + 1,
+			1,
+			0,
+			0
+		};
+	}
 
 	int is_running = 1;
 	int x, y;
 	x = y = 0;
 	double start = time(NULL);
 	double end = 0;
+	double iii = .1;
+	int below[16] = {0};
+	int belowc[16] = {0};
+	printf("%p\n", &below[(0 + 16) % gem_board.columns]);
 	while(is_running)
 	{
 		match_keyboard_update(&keyboard);
 		is_running = match_events_handle();
 
-		x = (x + 1) % (640 - texture.width);
-		if(match_keyboard_pressed(&keyboard, SDL_SCANCODE_SPACE))
+		x = (x + 1) % (1024 - texture.width);
+
+		// if(match_keyboard_just_pressed(&keyboard, SDL_SCANCODE_SPACE))
+		// {
+		// 	// iii = .1;
+		// 	// y = (y + 1) % (480 - texture.height);
+		// }
+		if(match_keyboard_just_pressed(&keyboard, SDL_SCANCODE_A))
 		{
+			for(int i = 0; i < gem_board.rows * gem_board.columns; i++)
+			{
+				if(!match_gem_state_is_defined(&gem_board.state[i]))
+				{
+					below[(i + 16) % gem_board.columns]++;
+				}
+			}
 			y = (y + 1) % (480 - texture.height);
 		}
-
-		SDL_SetRenderDrawColor(renderer, COLOR_CREAM);
+		if(match_keyboard_just_pressed(&keyboard, SDL_SCANCODE_B))
+		{
+			// memcpy(&belowc[0], &below[0], sizeof(int) * 16);
+		}
+		iii *= 1.05;
+		for(int i = 0; i < gem_board.rows * gem_board.columns; i++)
+		{
+			if(gem_board.state[i].flags != 2 && belowc[(i + 16) % gem_board.columns] > 0)
+			{
+				gem_board.state[i].y_animation_offset += iii * ((i + 16) / gem_board.columns) / 2;
+				if(gem_board.state[i].y_animation_offset >= belowc[(i + 16) % gem_board.columns] * 32)
+				{
+					gem_board.state[i].y_animation_offset = belowc[(i + 16) % gem_board.columns] * 32;
+					gem_board.state[i].flags = 2;
+				}
+			}
+			if(!match_gem_state_is_defined(&gem_board.state[i]) && belowc[(i + 16) % gem_board.columns] > 0)
+			{
+				belowc[(i + 16) % gem_board.columns]--;
+			}
+		}
+		memcpy(&belowc[0], &below[0], sizeof(int) * 16);
+		SDL_SetRenderDrawColor(renderer, hex_to_rgba(0x22222222));
 		SDL_RenderClear(renderer);
+		
 		SDL_Rect source_rect = {0, 0, texture.width, texture.height};
 		SDL_Rect destination_rect = {x, y, texture.width, texture.height};
 		SDL_RenderCopy(renderer, texture.raw, &source_rect, &destination_rect);
+		
+
+		SDL_SetRenderTarget(renderer, gem_board_texture_buffer.raw);
+			SDL_SetRenderDrawColor(renderer, hex_to_rgba(0x00000000));
+			SDL_RenderClear(renderer);
+			match_renderer_copy_gem_board(renderer, &gem_board, &gem_texture_atlas, 0, -MATCH_GEM_KIND_CLIP_RECT_HEIGHT * gem_board.visible_rows + match_gem_board_top_gap);
+		SDL_SetRenderTarget(renderer, NULL);
+		
+		source_rect = (SDL_Rect){0, 0, gem_board_texture_buffer.width, gem_board_texture_buffer.height};
+		destination_rect = (SDL_Rect){32*4, 32*4, gem_board_texture_buffer.width, gem_board_texture_buffer.height};
+		SDL_RenderCopy(renderer, gem_board_texture_buffer.raw, &source_rect, &destination_rect);
 		SDL_RenderPresent(renderer);
+		
 		end = time(NULL);
 		double diff = end - start;
 		if(diff >= 1)
 		{
-			char buffer[512];
-			snprintf(buffer, sizeof(buffer), "%i", x);
-			LOGMSG(buffer);
+			char pixels_per_second_message[512];
+			snprintf(pixels_per_second_message, sizeof(pixels_per_second_message), "pixels per second accumulated %i", x);
+			// LOGMSG(pixels_per_second_message);
 			start = time(NULL);
 		}
 	}
@@ -69,7 +149,7 @@ int match_init(SDL_Window **window, SDL_Renderer **renderer)
 	*window = SDL_CreateWindow(
 		"Hello, SDL2!", 
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
-		640, 480, 
+		1024, 512 + 512 / 2, 
 		0
 	);
 

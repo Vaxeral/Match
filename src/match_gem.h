@@ -6,10 +6,13 @@
 #include <SDL_rect.h>
 #include <SDL_render.h>
 
+#include <memory.h>
+
 struct MatchGemState;
 struct MatchGemBoard;
 
-SDL_Rect match_gem_kind_clip_rect(int gem_kind);
+int match_gem_state_is_defined(struct MatchGemState *gem_state);
+void match_gem_board_init(struct MatchGemBoard *gem_board, int rows, int columns, int visible_rows);
 
 enum MatchGemKind
 {
@@ -19,17 +22,19 @@ enum MatchGemKind
 	MATCH_GEM_KIND_MANA_GREEN,
 	MATCH_GEM_KIND_MANA_YELLOW,
 	MATCH_GEM_KIND_COINS,
+	MATCH_GEM_KIND_COUNT,
 	MATCH_GEM_KIND_EXPERIENCE,
 	MATCH_GEM_KIND_SKULL,
 	MATCH_GEM_KIND_SKULL_RED,
 	MATCH_GEM_KIND_WILD,
-	MATCH_GEM_KIND_COUNT
 };
 
 struct MatchGemState
 {
 	int kind;
 	int flags;
+	double x_animation_offset;
+	double y_animation_offset;
 };
 
 struct MatchGemBoard
@@ -37,6 +42,7 @@ struct MatchGemBoard
 	struct MatchGemState *state;
 	int columns;
 	int rows;
+	int visible_rows;
 };
 
 #endif
