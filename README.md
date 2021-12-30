@@ -2,7 +2,7 @@
 Match 3 game with RPG mechanics.
 
 ## Dependencies
-C compiler
+* C compiler
 * cmake
 * make
 * SDL2 development files
