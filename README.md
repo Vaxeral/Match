@@ -1,8 +1,15 @@
 # Match
 Match 3 game with RPG mechanics.
 
+## Dependencies
+C compiler
+cmake
+make
+SDL2 development files
+SDL2_image development files
+
 ## Build
-This build procedure requires cmake.  If you wish to use the build system in Match.sublime-project make sure to add bin/Debug and bin/Release to the project before building.
+If you wish to use the build system in Match.sublime-project make sure to add bin/Debug and bin/Release to the project before building.
 
 Do the following to build the project.
 

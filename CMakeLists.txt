@@ -18,10 +18,10 @@ add_executable(
 	src/match.c
 )
 
-set_property(
-	TARGET Match 
-	PROPERTY C_STANDARD 89
-	PROPERTY C_STANDARD_REQUIRED
+set_target_properties(
+	Match PROPERTIES
+    C_STANDARD 90
+    C_EXTENSIONS OFF
 )
 
 target_link_libraries(Match ${SDL2_LIBRARIES} ${SDL2_IMAGE_LIBRARIES})
