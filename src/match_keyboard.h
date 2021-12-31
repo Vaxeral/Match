@@ -3,9 +3,11 @@
 
 #include "match_definitions.h"
 
-#include <SDL_types.h>
-#include <SDL_scancode.h>
-#include <SDL_keyboard.h>
+#include "SDL_types.h"
+#include "SDL_scancode.h"
+#include "SDL_keyboard.h"
+
+#include <memory.h>
 
 struct MatchKeyboard
 {

@@ -3,15 +3,15 @@
 
 #include "match_definitions.h"
 
-#include <SDL_rect.h>
-#include <SDL_render.h>
+#include "SDL_rect.h"
+#include "SDL_render.h"
 
 #include <memory.h>
 
 struct MatchGemState;
 struct MatchGemBoard;
 
-int match_gem_state_is_defined(struct MatchGemState *gem_state);
+int match_gem_state_not_null(struct MatchGemState *gem_state);
 void match_gem_board_init(struct MatchGemBoard *gem_board, int rows, int columns, int visible_rows);
 
 enum MatchGemKind

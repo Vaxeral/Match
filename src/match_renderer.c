@@ -10,7 +10,10 @@ SDL_Rect match_gem_kind_clip_rect(int gem_kind)
 	};
 }
 
-void match_texture_load(struct MatchTexture *texture, SDL_Renderer *renderer, const char *path)
+void match_texture_load(
+	struct MatchTexture *texture, 
+	SDL_Renderer *renderer, 
+	const char *path)
 {
 	texture->raw = IMG_LoadTexture(renderer, path);
 	ASSERT(texture->raw, IMG_GetError());
@@ -31,6 +34,7 @@ void match_texture_init(
 		width,
 		height
 	);
+	ASSERT(texture, SDL_GetError());
 	texture->width = width;
 	texture->height = height;
 }
@@ -58,35 +62,22 @@ void match_renderer_copy_gem_board(
 	{
 		for(i = 0; i < gem_board->columns; i++)
 		{
-			if(match_gem_state_is_defined(current_gem)) {
-				int x = i * MATCH_GEM_KIND_CLIP_RECT_WIDTH + current_gem->x_animation_offset + gem_board_x_offset;
-				int y = j * MATCH_GEM_KIND_CLIP_RECT_HEIGHT + current_gem->y_animation_offset + gem_board_y_offset;
-				match_renderer_copy_gem(renderer, current_gem->kind, gem_texture_atlas, x, y);
+			if(match_gem_state_not_null(current_gem)) {
+				int x = i 
+				* MATCH_GEM_KIND_CLIP_RECT_WIDTH 
+				+ current_gem->x_animation_offset 
+				+ gem_board_x_offset;
+				int y = j 
+				* MATCH_GEM_KIND_CLIP_RECT_HEIGHT 
+				+ current_gem->y_animation_offset 
+				+ gem_board_y_offset;
+				match_renderer_copy_gem(
+					renderer, 
+					current_gem->kind, 
+					gem_texture_atlas, 
+					x, y);
 			}
 			current_gem++;
 		}
 	}
 }
-/*
-	struct Gem *current = &board->gems[0];
-	SDL_SetRenderTarget(match_renderer, visible_gems);
-	SDL_RenderClear(match_renderer);
-	SDL_Rect destination = (SDL_Rect){x, y, 0, 0};
-	SDL_QueryTexture(visible_gems, NULL, NULL, &destination.w, &destination.h);
-	int visible_offset = (board->rows - board->visible_rows) * GEM_CLIP_RECT_HEIGHT - (destination.h - board->visible_rows * GEM_CLIP_RECT_HEIGHT);
-	visible_offset *= -1;
-	for(int j = 0; j < board->rows; j++)
-	{
-		for(int i = 0; i < board->columns; i++)
-		{
-			if(match_gem_is_not_null(current)) {
-				int x = i * GEM_CLIP_RECT_WIDTH;
-				int y = j * GEM_CLIP_RECT_HEIGHT + current->y_offset + visible_offset;
-				match_renderer_draw_gem(current, x, y);
-			}
-			current++;
-		}
-	}
-	SDL_SetRenderTarget(match_renderer, NULL);
-	SDL_RenderCopy(match_renderer, visible_gems, NULL, &destination);
-*/

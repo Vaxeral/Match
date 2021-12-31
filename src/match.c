@@ -1,7 +1,7 @@
 #include "match.h"
 
-#include <SDL.h>
-#include <SDL_image.h>
+#include "SDL.h"
+#include "SDL_image.h"
 
 #include <time.h>
 #include <stdlib.h>
@@ -11,18 +11,39 @@ int match_events_handle(void);
 
 int main(int argc, char const *argv[])
 {
+	int hghg;
 	int c = 0;
 	SDL_Window *window;
 	SDL_Renderer *renderer;
-
 	match_init(&window, &renderer);
+
+SDL_version compiled;
+SDL_version linked;
+SDL_version img_compiled;
+SDL_VERSION(&compiled);
+SDL_IMAGE_VERSION(&img_compiled);
+SDL_GetVersion(&linked);
+printf("We compiled against SDL version %d.%d.%d ...\n",
+       compiled.major, compiled.minor, compiled.patch);
+printf("But we are linking against SDL version %d.%d.%d.\n",
+       linked.major, linked.minor, linked.patch);
+printf("We compiled against SDL img version %d.%d.%d ...\n",
+       img_compiled.major, img_compiled.minor, img_compiled.patch);
+
 
 	SDL_SetHint(SDL_HINT_RENDER_VSYNC, "1");
 
 	struct MatchTexture texture; 
-	match_texture_load(&texture, renderer, "resources/yellow-wolly-wog.png");
+	match_texture_load(
+		&texture, 
+		renderer, 
+		"resources/yellow-wolly-wog.png");
+	
 	struct MatchTexture gem_texture_atlas;
-	match_texture_load(&gem_texture_atlas, renderer, "resources/match-gem-texture-atlas.png");
+	match_texture_load(
+		&gem_texture_atlas, 
+		renderer, 
+		"resources/match-gem-texture-atlas.png");
 
 	struct MatchKeyboard keyboard;
 	match_keyboard_init(&keyboard);
@@ -38,12 +59,18 @@ int main(int argc, char const *argv[])
 		renderer, 
 		SDL_PIXELFORMAT_RGBA8888, 
 		SDL_TEXTUREACCESS_TARGET, 
-		MATCH_GEM_KIND_CLIP_RECT_WIDTH * gem_board.columns,
-		MATCH_GEM_KIND_CLIP_RECT_HEIGHT * gem_board.visible_rows + match_gem_board_top_gap);
+		
+		MATCH_GEM_KIND_CLIP_RECT_WIDTH 
+		* gem_board.columns,
+
+		MATCH_GEM_KIND_CLIP_RECT_HEIGHT 
+		* gem_board.visible_rows 
+		+ match_gem_board_top_gap);
 
 	srand(time(NULL));
 	int i;
-	for(i = 0; i < gem_board.columns * gem_board.visible_rows; i++)
+
+	for(i = 0; i < gem_board.columns * (gem_board.rows - gem_board.visible_rows); i++)
 	{
 		gem_board.state[i] = (struct MatchGemState){
 			(rand() % 50 > 25) ? 0 : (rand() % MATCH_GEM_KIND_COUNT - 1) + 1,
@@ -63,17 +90,16 @@ int main(int argc, char const *argv[])
 	int belowc[16] = {0};
 	double diff;
 	int starts = 0;
-	printf("%p\n", &below[(0 + 16) % gem_board.columns]);
 	while(is_running)
 	{
 		match_keyboard_update(&keyboard);
 		is_running = match_events_handle();
 
-		if(match_keyboard_just_pressed(&keyboard, SDL_SCANCODE_A))
+		if(!starts && match_keyboard_just_pressed(&keyboard, SDL_SCANCODE_A))
 		{
 			for(i = 0; i < gem_board.rows * gem_board.columns; i++)
 			{
-				if(!match_gem_state_is_defined(&gem_board.state[i]))
+				if(!match_gem_state_not_null(&gem_board.state[i]))
 				{
 					below[(i + 16) % gem_board.columns]++;
 				}
@@ -87,14 +113,14 @@ int main(int argc, char const *argv[])
 			{
 				if(gem_board.state[i].flags != 2 && belowc[(i + 16) % gem_board.columns] > 0)
 				{
-					gem_board.state[i].y_animation_offset += iii * ((i + 16) / gem_board.columns) / 2;
+					gem_board.state[i].y_animation_offset += iii * ((i + 16) / gem_board.columns) / 2 * diff;
 					if(gem_board.state[i].y_animation_offset >= belowc[(i + 16) % gem_board.columns] * 32)
 					{
 						gem_board.state[i].y_animation_offset = belowc[(i + 16) % gem_board.columns] * 32;
 						gem_board.state[i].flags = 2;
 					}
 				}
-				if(!match_gem_state_is_defined(&gem_board.state[i]) && belowc[(i + 16) % gem_board.columns] > 0)
+				if(!match_gem_state_not_null(&gem_board.state[i]) && belowc[(i + 16) % gem_board.columns] > 0)
 				{
 					belowc[(i + 16) % gem_board.columns]--;
 				}
@@ -108,12 +134,18 @@ int main(int argc, char const *argv[])
 		SDL_Rect source_rect = {0, 0, texture.width, texture.height};
 		SDL_Rect destination_rect = {x, y, texture.width, texture.height};
 		SDL_RenderCopy(renderer, texture.raw, &source_rect, &destination_rect);
-		
 
 		SDL_SetRenderTarget(renderer, gem_board_texture_buffer.raw);
 			SDL_SetRenderDrawColor(renderer, hex_to_rgba(0x00000000));
 			SDL_RenderClear(renderer);
-			match_renderer_copy_gem_board(renderer, &gem_board, &gem_texture_atlas, 0, -MATCH_GEM_KIND_CLIP_RECT_HEIGHT * gem_board.visible_rows + match_gem_board_top_gap);
+			match_renderer_copy_gem_board(
+				renderer, 
+				&gem_board, 
+				&gem_texture_atlas, 
+				0, 
+				-MATCH_GEM_KIND_CLIP_RECT_HEIGHT 
+				* (gem_board.rows - gem_board.visible_rows) 
+				+ match_gem_board_top_gap);
 		SDL_SetRenderTarget(renderer, NULL);
 		
 		source_rect = (SDL_Rect){0, 0, gem_board_texture_buffer.width, gem_board_texture_buffer.height};
@@ -124,7 +156,6 @@ int main(int argc, char const *argv[])
 		end = SDL_GetTicks();
 		diff = end - start;
 		start = end;
-		printf("%f\n", diff);
 	}
 	
 	return EXIT_SUCCESS;

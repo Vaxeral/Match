@@ -1,6 +1,6 @@
 #include "match_gem.h"
 
-int match_gem_state_is_defined(struct MatchGemState *gem_state)
+int match_gem_state_not_null(struct MatchGemState *gem_state)
 {
 	return gem_state->kind && gem_state->flags;
 }
