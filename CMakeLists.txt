@@ -26,6 +26,7 @@ add_executable(
 	Match 
 	src/match.c
 )
+
 target_include_directories(
 	Match PRIVATE
 	${extern_sdl2_SOURCE_DIR}/include
@@ -35,7 +36,7 @@ target_include_directories(
 set_target_properties(
 	Match PROPERTIES
     C_STANDARD 90
-    C_EXTENSIONS OFF
+    C_EXTENSIONS ON
 )
 
 target_link_libraries(

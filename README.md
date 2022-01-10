@@ -18,3 +18,7 @@ Do the following to build the project.
     make
 
 To run cd to the project root directory and run the executable from there. 
+
+https://user-images.githubusercontent.com/84162472/148712704-f66a3a72-032c-4128-889c-89870211fb53.mp4
+
+https://user-images.githubusercontent.com/84162472/148712720-69b512e0-d559-4b8b-bb26-ab61b63bdf48.mp4
