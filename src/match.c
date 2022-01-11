@@ -138,9 +138,98 @@ void match_gem_board_matches_clear(struct MatchGemBoard *board, int *cleared)
         }
 }
 
+struct MatchGemSwap
+{
+    int a, b;
+    int streak;
+};    
+
+void match_gem_board_matches_has_possible(struct MatchGemBoard *board, struct MatchGemSwap *pairs[])
+{
+    int i, j, streak;
+
+    int const rows = board->rows;
+    int const columns = board->columns;
+    int const size = rows * columns;
+
+    int const streak_max = 3;
+
+    struct MatchGemState *window;
+
+    struct MatchGemState *const state = board->state;
+
+    for(j = 0; j < rows; j++)
+    {
+        int consecutive_streaks = 0;
+        for(i = 0; i < columns - (streak_max - 1); i++)
+        {
+            window = state + i + j * columns;
+
+            //left right top bottom
+            int flags = 0;
+            flags |= (i == 0) ? 1 : 0;
+            flags |= (i == columns - (streak_max - 1)) ? (1 << 1) : 0;
+            flags |= (j == 0) ? (1 << 2) : 0;
+            flags |= (j == rows) ? (1 << 3) : 0;
+            ASSERT((flags & 3) != 3, "Gem cant be both on left and right!");
+            ASSERT((flags & (3 << 2)) != (3 << 2), "Gem cant be both on top and bottom!");
+
+            struct MatchGemState *between = NULL;
+            int skip;
+            for(skip = 0; skip < streak_max; skip++)
+            {
+                // three consecutive streaks -> possible five streak or two three streaks.
+                // two consecutive streaks -> possible four streak or one three streak.
+                // one streak -> one three streak.
+                struct MatchGemState *previous = NULL;
+                struct MatchGemState *current = window;
+                int offset = 0;
+                for(offset = 0; offset < streak_max; offset++)
+                {
+                    if(offset == skip)
+                    {
+                        current++;
+                        continue;
+                    }
+                    if(previous && previous->kind == current->kind)
+                        streak++;
+                    else 
+
+                    previous = current;
+                    current = window + offset;
+                }
+                if(streak >= streak_max - 1)
+                {
+                    between = window + skip;
+                    consecutive_streaks++;
+                }
+                else
+                {
+                    if(consecutive_streaks == 3)
+                    {
+
+                    }
+                    else if (consecutive_streaks == 2)
+                    {
+
+                    }
+                    else if (consecutive_streaks == 1)
+                    {
+
+                    }
+                    consecutive_streaks = 0;
+                }
+                streak = 1;
+            }
+        }
+    }
+}
+
 int main(int argc, char const *argv[])
 {
 	match_init();
+
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
 
 	struct MatchTexture texture;
 	match_texture_load(&texture, "resources/yellow-wolly-wog.png");
@@ -180,7 +269,6 @@ int main(int argc, char const *argv[])
 			0
 		};
 	}
-
 	int is_running = 1;
 	int x, y;
 	x = y = 0;
@@ -212,6 +300,7 @@ int main(int argc, char const *argv[])
         
         if(match_keyboard_just_pressed(SDL_SCANCODE_P))  
         {
+        match_gem_board_matches_has_possible(&gem_board, NULL);
             match_gem_board_matches_clear(&gem_board, below);
             starts = 1;
         }      

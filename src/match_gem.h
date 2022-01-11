@@ -16,10 +16,6 @@ extern struct MatchGemBoard gem_board;
 int match_gem_state_is_null(struct MatchGemState *gem_state);
 void match_gem_board_init(struct MatchGemBoard *gem_board, int rows, int columns, int visible_rows);
 
-/*
-	
-*/
-
 enum MatchGemKind
 {
 	MATCH_GEM_KIND_NULL,
