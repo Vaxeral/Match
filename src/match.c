@@ -5,6 +5,7 @@
 
 #include <time.h>
 #include <stdlib.h>
+// stack of gaps.  modify last gap on stack pop off if need be.  gap sotres kind and streak count as well as the gem state ptr.
 // push animations into a queue.
 // code board logic and verify operations.
 int match_init(void);
