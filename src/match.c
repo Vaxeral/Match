@@ -5,13 +5,656 @@
 
 #include <time.h>
 #include <stdlib.h>
-// stack of gaps.  modify last gap on stack pop off if need be.  gap sotres kind and streak count as well as the gem state ptr.
 // push animations into a queue.
 // code board logic and verify operations.
+
+// figure out when animations are done.  animation queue.
 int match_init(void);
 int match_events_handle(void);
 
-void collapse_board(char* board, int rows, int columns)
+#include <memory.h>
+
+enum MatchGemBoardEdge
+{
+    MATCH_GEM_BOARD_EDGE_NONE,
+    MATCH_GEM_BOARD_EDGE_CENTER,
+    MATCH_GEM_BOARD_EDGE_LEFT,
+    MATCH_GEM_BOARD_EDGE_RIGHT,
+    MATCH_GEM_BOARD_EDGE_TOP,
+    MATCH_GEM_BOARD_EDGE_BOTTOM,
+    MATCH_GEM_BOARD_EDGE_TOP_LEFT,
+    MATCH_GEM_BOARD_EDGE_TOP_RIGHT,
+    MATCH_GEM_BOARD_EDGE_BOTTOM_LEFT,
+    MATCH_GEM_BOARD_EDGE_BOTTOM_RIGHT 
+};
+
+enum MatchStreakConfig
+{
+    MATCH_STREAK_CONFIG_NONE,
+    MATCH_STREAK_CONFIG_START,
+    MATCH_STREAK_CONFIG_MIDDLE,
+    MATCH_STREAK_CONFIG_END
+};
+
+enum MatchStreakOrientation
+{
+    MATCH_STREAK_ORIENTATION_NONE,
+    MATCH_STREAK_ORIENTATION_HORIZONTAL,
+    MATCH_STREAK_ORIENTATION_VERTICAL
+};
+
+struct MatchGemPattern
+{
+    int kind;
+    int config;
+};
+
+struct MatchGemSwap
+{
+    struct MatchGemState *gem;
+    struct MatchGemPattern pattern;
+    int direction;
+    int edge;
+    int streak_potential;
+    int streak_orientation;
+};
+
+enum MatchGemSwapDirection
+{
+    MATCH_GEM_SWAP_DIRECTION_NONE,
+    MATCH_GEM_SWAP_DIRECTION_LEFT = 1 << 0,
+    MATCH_GEM_SWAP_DIRECTION_RIGHT = 1 << 1,
+    MATCH_GEM_SWAP_DIRECTION_TOP = 1 << 2,
+    MATCH_GEM_SWAP_DIRECTION_BOTTOM = 1 << 3    
+};
+
+struct MatchGemSwapArray
+{
+    struct MatchGemSwap *data;
+    int size;
+    int capacity;
+};
+
+void match_gem_swap_array_init(struct MatchGemSwapArray *array)
+{
+    array->capacity = 2;
+    array->data = calloc(array->capacity, sizeof(struct MatchGemSwap));
+    array->size = 0;
+}
+
+void match_gem_swap_array_push(struct MatchGemSwapArray *array, struct MatchGemSwap value)
+{
+    if(array->size >= array->capacity)
+    {
+        array->capacity *= 2;
+        void *result = realloc(array->data, sizeof(struct MatchGemSwap) * array->capacity);
+        ASSERT(result, "Could not allocate for MatchGemSwapArray.");
+        array->data = result;
+    }
+    array->data[array->size++] = value;
+}
+
+void match_gem_swap_array_free(struct MatchGemSwapArray *array)
+{
+    free(array->data);
+}
+    /*
+        if(no streak)
+            skip all
+
+        if(prev != none)
+            skip stack push
+
+        if(current != (abb || bba))
+            streak = last / 2 + current
+
+            !only if kind is the same
+            if(prev != (abb || bba))
+                skip stack push and new candidate
+                candidate += 1
+        else
+            streak = current
+            
+            !only if kind is the same
+            if(prev != (abb || bba))
+               candidate += 1
+    */
+/*
+    streak: majority in window and majority >= threshold - 1 is streak to test for.
+    1234567
+    abbabba
+
+    abb candidate <- { position: 1, streak: current(2), kind: b }
+    bba stack <- candidate, candidate <- { position: 4, streak: current(2), kind: b }
+    bab stack <- candidate, candidate <- { position: 4, streak: last / 2 + current (3), kind: b }
+    abb candidate += 1, stack <- candidate, candidate <- { position: 4, streak: current(2), kind b } 
+    bba stack <- candidate, candidate <- { position: 7, streak: current(2), kind: b }
+    end stack <- candidate
+
+    TODO: need to test streaks greater than 3.
+    
+    if(no streak)
+        skip all
+
+    if(prev != none)
+        skip stack push
+
+    if(current != (abb || bba))
+        streak = last / 2 + current
+
+        !only if kind is the same
+        if(prev != (abb || bba))
+            skip stack push and new candidate
+            candidate += 1
+    else
+        streak = current
+        
+        !only if kind is the same
+        if(prev != (abb || bba))
+           candidate += 1
+
+    
+
+
+
+    abb candidate <- { position: 1, streak: (2), kind: b }
+    bba stack <- candidate, candidate <- { position: 4, streak: (2), kind: b }
+
+    bab stack <- candidate, candidate <- { position: 4, streak: (last / 2 + current), kind: b }
+    abb stack <- candidate, candidate <- { position: 4, streak: current, kind: b }
+    bba
+     
+    1234567
+    abababa
+    
+
+
+
+
+
+
+
+
+
+
+
+
+    baaa
+    aaab
+    aaba
+
+
+    babb
+*/
+
+#define match_gem_board_window_histogram(stride)\
+for(k = 0; k < MATCH_GEM_KIND_COUNT; k++)       \
+    histogram[k] = 0;                           \
+for(k = 0; k < streak_threshold; k++)           \
+    histogram[(window + (k * stride))->kind]++;  
+
+#define match_gem_board_window_pattern(stride)                                                              \
+majority = 0;                                                                                               \
+highest = 0;                                                                                                \
+for(k = 0; k < MATCH_GEM_KIND_COUNT; k++)                                                                   \
+{                                                                                                           \
+    if(histogram[k] > highest)                                                                              \
+    {                                                                                                       \
+        highest = histogram[k];                                                                             \
+        majority = k;                                                                                       \
+    }                                                                                                       \
+}                                                                                                           \
+if(highest >= streak_threshold - 1)                                                                         \
+{                                                                                                           \
+    pattern_current.kind = majority;                                                                        \
+    if(window[0].kind == window[(streak_threshold - 1) * stride].kind)                                      \
+    {                                                                                                       \
+        pattern_current.config = MATCH_STREAK_CONFIG_MIDDLE;                                                \
+    }                                                                                                       \
+    else if(window[(streak_threshold - 2) * stride].kind != window[(streak_threshold - 1) * stride].kind)   \
+    {                                                                                                       \
+        pattern_current.config = MATCH_STREAK_CONFIG_END;                                                   \
+    }                                                                                                       \
+    else if(window[0].kind != window[1 * stride].kind)                                                      \
+    {                                                                                                       \
+        pattern_current.config = MATCH_STREAK_CONFIG_START;                                                 \
+    }                                                                                                       \
+}                                                                                                           \
+else                                                                                                        \
+{                                                                                                           \
+    pattern_current.config = MATCH_STREAK_CONFIG_NONE;                                                      \
+    pattern_current.kind = 0;                                                                               \
+}
+
+void match_gem_board_matches_has_possible(struct MatchGemBoard *board)
+{
+    int const columns = board->columns;
+    int const rows = board->rows;
+    int const size = rows * columns;
+    int const streak_threshold = 3;
+
+    struct MatchGemState *state = board->state;
+
+    int i, j, k;
+    int majority, highest;
+    int highest_previous;
+    int push_skip;
+    int subject_skip;
+    int subject_streak;
+
+    struct MatchGemSwap subject;
+    struct MatchGemSwapArray candidates;
+
+    match_gem_swap_array_init(&candidates);
+
+    struct MatchGemState *window;
+
+    int histogram[MATCH_GEM_KIND_COUNT];
+
+    struct MatchGemPattern pattern_previous;
+    struct MatchGemPattern pattern_current;
+
+    for(j = 0; j < rows; j++)
+    {
+        window = state + 0 + j * columns;
+        match_gem_board_window_histogram(1)
+
+        subject = (struct MatchGemSwap){0};
+        pattern_previous = (struct MatchGemPattern){0};
+        highest_previous = 0;
+        subject_streak = 0;
+
+        for(i = 0; i < columns - (streak_threshold - 1); i++)
+        {
+            window = state + i + j * columns;
+            if(i != 0)
+            {
+                histogram[(window + streak_threshold - 1)->kind]++;
+            }
+
+            match_gem_board_window_pattern(1)
+
+            push_skip = 0;
+            subject_skip = 0;
+
+            if(pattern_current.config == MATCH_STREAK_CONFIG_NONE)
+            {
+                subject_skip = 1;
+            }
+
+            if(pattern_previous.config == MATCH_STREAK_CONFIG_NONE)
+            {
+                push_skip = 1;
+            }
+
+            if(pattern_current.config == MATCH_STREAK_CONFIG_MIDDLE)
+            {
+                subject_streak = highest_previous / 2 + highest;
+
+                if(
+                    pattern_current.kind == pattern_previous.kind
+                    && pattern_previous.config == MATCH_STREAK_CONFIG_MIDDLE)
+                {
+
+                    subject.streak_potential += 1;
+
+                    subject_skip = 1;
+                    push_skip = 1;
+                }
+            }
+            else
+            {
+                subject_streak = highest;
+
+                if(
+                    pattern_current.kind == pattern_previous.kind
+                    && pattern_previous.config == MATCH_STREAK_CONFIG_MIDDLE)
+                {
+                    subject.streak_potential += 1;
+                }
+            }   
+
+            if(!push_skip)
+            {
+                match_gem_swap_array_push(&candidates, subject);
+            }
+            if(!subject_skip)
+            {
+                struct MatchGemState *gem = NULL;
+                if(pattern_current.config == MATCH_STREAK_CONFIG_START)
+                {
+                    gem = window;
+                }
+                else if(pattern_current.config == MATCH_STREAK_CONFIG_MIDDLE)
+                {
+                    gem = window + (streak_threshold - 2);
+                }
+                else if(pattern_current.config == MATCH_STREAK_CONFIG_END)
+                {
+                    gem = window + (streak_threshold - 1);
+                }
+
+                int edge = MATCH_GEM_BOARD_EDGE_NONE;
+                int index = gem - state;
+                int left = 0, right = 0, top = 0, bottom = 0;
+
+                if(index % columns == 0)
+                    left = 1;
+                if(index % columns == columns - 1)
+                    right = 1;
+                if(index / columns == 0)
+                    top = 1;
+                if(index / columns == rows - 1)
+                    bottom = 1;
+
+                if(top && left)
+                    edge = MATCH_GEM_BOARD_EDGE_TOP_LEFT;
+                else if(top && right)
+                    edge = MATCH_GEM_BOARD_EDGE_TOP_RIGHT;
+                else if(bottom && left)
+                    edge = MATCH_GEM_BOARD_EDGE_BOTTOM_LEFT;
+                else if(bottom && right)
+                    edge = MATCH_GEM_BOARD_EDGE_BOTTOM_RIGHT;
+                else if(top)
+                    edge = MATCH_GEM_BOARD_EDGE_TOP;
+                else if(bottom)
+                    edge = MATCH_GEM_BOARD_EDGE_BOTTOM;
+                else if(left)
+                    edge = MATCH_GEM_BOARD_EDGE_LEFT;
+                else if(right)
+                    edge = MATCH_GEM_BOARD_EDGE_RIGHT;
+                else
+                    edge = MATCH_GEM_BOARD_EDGE_CENTER;
+
+                subject = (struct MatchGemSwap){
+                    gem,
+                    pattern_current,
+                    MATCH_GEM_SWAP_DIRECTION_NONE, // directions to swap.  not know at this stage.
+                    edge,
+                    subject_streak + 1,
+                    MATCH_STREAK_ORIENTATION_HORIZONTAL
+                };  
+            }
+
+            highest_previous = highest;
+            histogram[window->kind]--;
+            pattern_previous = pattern_current;
+        }
+        if(pattern_current.config != MATCH_STREAK_CONFIG_NONE)
+        {
+            match_gem_swap_array_push(&candidates, subject);
+        }
+    }
+
+    for(i = 0; i < columns; i++)
+    {
+        window = state + i + 0 * columns;
+        match_gem_board_window_histogram(columns)
+
+        subject = (struct MatchGemSwap){0};
+        pattern_previous = (struct MatchGemPattern){0};
+        highest_previous = 0;
+        subject_streak = 0;
+
+        for(j = 0; j < rows - (streak_threshold - 1); j++)
+        {
+            window = state + i + j * columns;
+            if(j != 0)
+            {
+                histogram[(window + (streak_threshold - 1) * columns)->kind]++;
+            }
+
+            match_gem_board_window_pattern(columns)
+
+            push_skip = 0;
+            subject_skip = 0;
+
+            if(pattern_current.config == MATCH_STREAK_CONFIG_NONE)
+            {
+                subject_skip = 1;
+            }
+
+            if(pattern_previous.config == MATCH_STREAK_CONFIG_NONE)
+            {
+                push_skip = 1;
+            }
+
+            if(pattern_current.config == MATCH_STREAK_CONFIG_MIDDLE)
+            {
+                subject_streak = highest_previous / 2 + highest;
+
+                if(
+                    pattern_current.kind == pattern_previous.kind
+                    && pattern_previous.config == MATCH_STREAK_CONFIG_MIDDLE)
+                {
+
+                    subject.streak_potential += 1;
+
+                    subject_skip = 1;
+                    push_skip = 1;
+                }
+            }
+            else
+            {
+                subject_streak = highest;
+
+                if(
+                    pattern_current.kind == pattern_previous.kind
+                    && pattern_previous.config == MATCH_STREAK_CONFIG_MIDDLE)
+                {
+                    subject.streak_potential += 1;
+                }
+            }   
+
+            if(!push_skip)
+            {
+                match_gem_swap_array_push(&candidates, subject);
+            }
+            if(!subject_skip)
+            {
+                struct MatchGemState *gem = NULL;
+                if(pattern_current.config == MATCH_STREAK_CONFIG_START)
+                {
+                    gem = window;
+                }
+                else if(pattern_current.config == MATCH_STREAK_CONFIG_MIDDLE)
+                {
+                    gem = window + (streak_threshold - 2) * columns;
+                }
+                else if(pattern_current.config == MATCH_STREAK_CONFIG_END)
+                {
+                    gem = window + (streak_threshold - 1) * columns;
+                }
+
+                int edge = MATCH_GEM_BOARD_EDGE_NONE;
+                int index = gem - state;
+                int left = 0, right = 0, top = 0, bottom = 0;
+
+                if(index % columns == 0)
+                    left = 1;
+                if(index % columns == columns - 1)
+                    right = 1;
+                if(index / columns == 0)
+                    top = 1;
+                if(index / columns == rows - 1)
+                    bottom = 1;
+
+                if(top && left)
+                    edge = MATCH_GEM_BOARD_EDGE_TOP_LEFT;
+                else if(top && right)
+                    edge = MATCH_GEM_BOARD_EDGE_TOP_RIGHT;
+                else if(bottom && left)
+                    edge = MATCH_GEM_BOARD_EDGE_BOTTOM_LEFT;
+                else if(bottom && right)
+                    edge = MATCH_GEM_BOARD_EDGE_BOTTOM_RIGHT;
+                else if(top)
+                    edge = MATCH_GEM_BOARD_EDGE_TOP;
+                else if(bottom)
+                    edge = MATCH_GEM_BOARD_EDGE_BOTTOM;
+                else if(left)
+                    edge = MATCH_GEM_BOARD_EDGE_LEFT;
+                else if(right)
+                    edge = MATCH_GEM_BOARD_EDGE_RIGHT;
+                else
+                    edge = MATCH_GEM_BOARD_EDGE_CENTER;
+
+                subject = (struct MatchGemSwap){
+                    gem,
+                    pattern_current,
+                    MATCH_GEM_SWAP_DIRECTION_NONE, // directions to swap.  not know at this stage.
+                    edge,
+                    subject_streak + 1,
+                    MATCH_STREAK_ORIENTATION_VERTICAL
+                };  
+            }
+
+            highest_previous = highest;
+            histogram[window->kind]--;
+            pattern_previous = pattern_current;
+        }
+        if(pattern_current.config != MATCH_STREAK_CONFIG_NONE)
+        {
+            match_gem_swap_array_push(&candidates, subject);
+        }
+    }
+
+    int n;
+    for(n = 0; n < candidates.size; n++)
+    {
+        struct MatchGemSwap *swap = &candidates.data[n];
+
+        struct MatchGemState *left = swap->gem - 1;
+        struct MatchGemState *right = swap->gem + 1;
+        struct MatchGemState *top = swap->gem - columns;
+        struct MatchGemState *bottom = swap->gem + columns;
+
+        struct MatchGemState *a;
+        struct MatchGemState *b;
+        struct MatchGemState *c;
+        struct MatchGemState *d;
+
+        int swap_right = MATCH_GEM_SWAP_DIRECTION_NONE;
+        int swap_left = MATCH_GEM_SWAP_DIRECTION_NONE;
+        int swap_top = MATCH_GEM_SWAP_DIRECTION_NONE;
+        int swap_bottom = MATCH_GEM_SWAP_DIRECTION_NONE;
+
+        // assert edge
+        switch(swap->edge)
+        {
+            case MATCH_GEM_BOARD_EDGE_LEFT:
+                left = NULL;
+            break;
+            case MATCH_GEM_BOARD_EDGE_RIGHT:
+                right = NULL;
+            break;
+            case MATCH_GEM_BOARD_EDGE_TOP:
+                top = NULL;
+            break;
+            case MATCH_GEM_BOARD_EDGE_BOTTOM:
+                bottom = NULL;
+            break;
+            case MATCH_GEM_BOARD_EDGE_TOP_LEFT:
+                top = NULL;
+                left = NULL;
+            break;
+            case MATCH_GEM_BOARD_EDGE_TOP_RIGHT:
+                top = NULL;
+                right = NULL;
+            break;
+            case MATCH_GEM_BOARD_EDGE_BOTTOM_LEFT:
+                bottom = NULL;
+                left = NULL;
+            break;
+            case MATCH_GEM_BOARD_EDGE_BOTTOM_RIGHT:
+                bottom = NULL;
+                right = NULL;
+            break;
+            case MATCH_GEM_BOARD_EDGE_CENTER:
+                // All swap directions can be checked.
+            break;
+
+            default:
+                ASSERT(0, "swap edge case not handled.");
+            break;
+        };
+
+        ASSERT(swap->streak_orientation, "streak orientation was set to zero.");
+        int is_horizontal = swap->streak_orientation == MATCH_STREAK_ORIENTATION_HORIZONTAL;
+        
+
+        if(is_horizontal)
+        {
+            a = left;
+            b = right;
+            c = top;
+            d = bottom;
+            swap_left = MATCH_GEM_SWAP_DIRECTION_LEFT;
+            swap_right = MATCH_GEM_SWAP_DIRECTION_RIGHT;
+            swap_top = MATCH_GEM_SWAP_DIRECTION_TOP;
+            swap_bottom = MATCH_GEM_SWAP_DIRECTION_BOTTOM;
+        }
+        else
+        {
+            a = top;
+            b = bottom;
+            c = left;
+            d = right;
+            swap_left = MATCH_GEM_SWAP_DIRECTION_TOP;
+            swap_right = MATCH_GEM_SWAP_DIRECTION_BOTTOM;
+            swap_top = MATCH_GEM_SWAP_DIRECTION_LEFT;
+            swap_bottom = MATCH_GEM_SWAP_DIRECTION_RIGHT;
+        } 
+
+        ASSERT(swap->pattern.config, "pattern config was set to zero.");
+        if(swap->pattern.config == MATCH_STREAK_CONFIG_START)
+        {
+            if(a && a->kind == swap->pattern.kind)
+                swap->direction |= swap_left;
+            if(c && c->kind == swap->pattern.kind)
+                swap->direction |= swap_top;
+            if(d && d->kind == swap->pattern.kind)
+                swap->direction |= swap_bottom;
+        }
+        else if(swap->pattern.config == MATCH_STREAK_CONFIG_END)
+        {
+            if(b && b->kind == swap->pattern.kind)
+                swap->direction |= swap_right;
+            if(c && c->kind == swap->pattern.kind)
+                swap->direction |= swap_top;
+            if(d && d->kind == swap->pattern.kind)
+                swap->direction |= swap_bottom;
+        }
+        else if(swap->pattern.config == MATCH_STREAK_CONFIG_MIDDLE)
+        {
+            if(c && c->kind == swap->pattern.kind)
+                swap->direction |= swap_top;
+            if(d && d->kind == swap->pattern.kind)
+                swap->direction |= swap_bottom;
+        }
+    }
+
+    for(i = 0; i < candidates.size; i++)
+    {
+        if(
+            candidates.data[i].direction != MATCH_GEM_SWAP_DIRECTION_NONE 
+            )
+        {
+            printf(
+                "position: %lu, kind: %d, potential: %d, config: %d, orientation: %d, edge: %d\n", 
+                candidates.data[i].gem - state, 
+                candidates.data[i].pattern.kind, 
+                candidates.data[i].streak_potential,
+                candidates.data[i].pattern.config,
+                candidates.data[i].streak_orientation,
+                candidates.data[i].edge);
+            candidates.data[i].gem->flags = 6;
+        }
+    }
+
+    match_gem_swap_array_free(&candidates);
+}
+
+void collapse_board(struct MatchGemBoard* board, int rows, int columns)
 {
     int empty_index;
     int i, j;
@@ -21,7 +664,7 @@ void collapse_board(char* board, int rows, int columns)
         empty_index = -1;
         for(j = rows - 1; j >= 0; j--)
         {
-            if(board[i + j * columns] == ' ')
+            if(board->state[i + j * columns].kind == 0)
             {
                 if(empty_index == -1) empty_index = j;
             }
@@ -29,9 +672,9 @@ void collapse_board(char* board, int rows, int columns)
             {
                 if(empty_index != -1)
                 {
-                    int tmp = board[i + j * columns];
-                    board[i + j * columns] = ' ';
-                    board[i + empty_index * columns] = tmp;
+                    struct MatchGemState tmp = board->state[i + j * columns];
+                    board->state[i + j * columns] = (struct MatchGemState){0};
+                    board->state[i + empty_index * columns] = tmp;
                     empty_index--;
                 }
             }
@@ -139,98 +782,15 @@ void match_gem_board_matches_clear(struct MatchGemBoard *board, int *cleared)
         }
 }
 
-struct MatchGemSwap
-{
-    int a, b;
-    int streak;
-};    
-
-void match_gem_board_matches_has_possible(struct MatchGemBoard *board, struct MatchGemSwap *pairs[])
-{
-    int i, j, streak;
-
-    int const rows = board->rows;
-    int const columns = board->columns;
-    int const size = rows * columns;
-
-    int const streak_max = 3;
-
-    struct MatchGemState *window;
-
-    struct MatchGemState *const state = board->state;
-
-    for(j = 0; j < rows; j++)
-    {
-        int consecutive_streaks = 0;
-        for(i = 0; i < columns - (streak_max - 1); i++)
-        {
-            window = state + i + j * columns;
-
-            //left right top bottom
-            int flags = 0;
-            flags |= (i == 0) ? 1 : 0;
-            flags |= (i == columns - (streak_max - 1)) ? (1 << 1) : 0;
-            flags |= (j == 0) ? (1 << 2) : 0;
-            flags |= (j == rows) ? (1 << 3) : 0;
-            ASSERT((flags & 3) != 3, "Gem cant be both on left and right!");
-            ASSERT((flags & (3 << 2)) != (3 << 2), "Gem cant be both on top and bottom!");
-
-            struct MatchGemState *between = NULL;
-            int skip;
-            for(skip = 0; skip < streak_max; skip++)
-            {
-                // three consecutive streaks -> possible five streak or two three streaks.
-                // two consecutive streaks -> possible four streak or one three streak.
-                // one streak -> one three streak.
-                struct MatchGemState *previous = NULL;
-                struct MatchGemState *current = window;
-                int offset = 0;
-                for(offset = 0; offset < streak_max; offset++)
-                {
-                    if(offset == skip)
-                    {
-                        current++;
-                        continue;
-                    }
-                    if(previous && previous->kind == current->kind)
-                        streak++;
-                    else 
-
-                    previous = current;
-                    current = window + offset;
-                }
-                if(streak >= streak_max - 1)
-                {
-                    between = window + skip;
-                    consecutive_streaks++;
-                }
-                else
-                {
-                    if(consecutive_streaks == 3)
-                    {
-
-                    }
-                    else if (consecutive_streaks == 2)
-                    {
-
-                    }
-                    else if (consecutive_streaks == 1)
-                    {
-
-                    }
-                    consecutive_streaks = 0;
-                }
-                streak = 1;
-            }
-        }
-    }
-}
+// struct MatchGemSwap
+// {
+//     int a, b;
+//     int streak;
+// };    
 
 int main(int argc, char const *argv[])
 {
 	match_init();
-
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
 
 	struct MatchTexture texture;
 	match_texture_load(&texture, "resources/yellow-wolly-wog.png");
@@ -259,25 +819,74 @@ int main(int argc, char const *argv[])
 		MATCH_GEM_KIND_CLIP_RECT_HEIGHT 
 		* gem_board.visible_rows 
 		+ match_gem_board_top_gap);
+
+    SDL_SetRenderDrawBlendMode(match_renderer, SDL_BLENDMODE_BLEND);
+
 	int i;
 
+    int prev;
+    int curr = 0;
+    int rand_gem;
+    int streak = 1;
 	for(i = 0; i < gem_board.columns * gem_board.rows; i++)
 	{
+        if(prev == curr) streak++;
+        else streak = 1;
+        if(streak >= 2)
+        {
+            rand_gem = (rand() % (MATCH_GEM_KIND_COUNT - 1)) + 1;
+            while(rand_gem == prev)
+            {
+                rand_gem = (rand() % (MATCH_GEM_KIND_COUNT - 1)) + 1;
+            }
+        }
+        else
+        {
+            rand_gem = (rand() % (MATCH_GEM_KIND_COUNT - 1)) + 1;
+        }
+        prev = curr;
+        curr = rand_gem;
 		gem_board.state[i] = (struct MatchGemState){
-			(0) ? 0 : (rand() % (MATCH_GEM_KIND_COUNT - 1)) + 1,
+            curr,
 			1,
 			0,
 			0
 		};
 	}
-	int is_running = 1;
+    // struct MatchGemState *last = gem_board.state + (gem_board.rows - 1) * gem_board.columns;
+
+    // last++->kind = MATCH_GEM_KIND_MANA_RED;
+    // last++->kind = MATCH_GEM_KIND_MANA_BLUE;
+    // last++->kind = MATCH_GEM_KIND_MANA_RED;
+    // last++->kind = MATCH_GEM_KIND_MANA_RED;
+    // last++->kind = MATCH_GEM_KIND_SKULL;
+    // last++->kind = MATCH_GEM_KIND_MANA_YELLOW;
+    // last++->kind = MATCH_GEM_KIND_MANA_BLUE;
+    // last++->kind = MATCH_GEM_KIND_MANA_RED;
+    // last++->kind = MATCH_GEM_KIND_SKULL;
+    // last++->kind = MATCH_GEM_KIND_MANA_RED;
+
+    // last = gem_board.state + (gem_board.rows - 2) * gem_board.columns;
+
+    // last++->kind = MATCH_GEM_KIND_SKULL;
+    // last++->kind = MATCH_GEM_KIND_COINS;
+    // last++->kind = MATCH_GEM_KIND_SKULL;
+
+    // last = gem_board.state + (gem_board.columns - 2) + (gem_board.rows - 3) * gem_board.columns;
+    // last++->kind = MATCH_GEM_KIND_COINS;
+    // last++->kind = MATCH_GEM_KIND_COINS;
+
+
+
+    match_gem_board_matches_has_possible(&gem_board);
+	int below[16] = {0};
+	int belowc[16] = {0};
+    int is_running = 1;
 	int x, y;
 	x = y = 0;
 	double start = time(NULL);
 	double end = 0;
 	double iii = .25;
-	int below[16] = {0};
-	int belowc[16] = {0};
 	double diff;
 	int starts = 0;
     int object_animation_count = 0;
@@ -298,10 +907,10 @@ int main(int argc, char const *argv[])
 		// 	}
 		// 	starts = 1;
 		// }
-        
+        if(match_keyboard_just_pressed(SDL_SCANCODE_T))
+            match_gem_board_matches_has_possible(&gem_board);
         if(match_keyboard_just_pressed(SDL_SCANCODE_P))  
         {
-        match_gem_board_matches_has_possible(&gem_board, NULL);
             match_gem_board_matches_clear(&gem_board, below);
             starts = 1;
         }      
@@ -322,15 +931,31 @@ int main(int argc, char const *argv[])
         MATCH_GEM_KIND_CLIP_RECT_HEIGHT 
         * gem_board.visible_rows 
         + match_gem_board_top_gap);
-            for(i = 0; i < gem_board.columns * gem_board.rows; i++)
+    for(i = 0; i < gem_board.columns * gem_board.rows; i++)
+    {
+        if(prev == curr) streak++;
+        else streak = 1;
+        if(streak >= 2)
+        {
+            rand_gem = (rand() % (MATCH_GEM_KIND_COUNT - 1)) + 1;
+            while(rand_gem == prev)
             {
-                gem_board.state[i] = (struct MatchGemState){
-                    (0) ? 0 : (rand() % (MATCH_GEM_KIND_COUNT - 1)) + 1,
-                    1,
-                    0,
-                    0
-                };
+                rand_gem = (rand() % (MATCH_GEM_KIND_COUNT - 1)) + 1;
             }
+        }
+        else
+        {
+            rand_gem = (rand() % (MATCH_GEM_KIND_COUNT - 1)) + 1;
+        }
+        prev = curr;
+        curr = rand_gem;
+        gem_board.state[i] = (struct MatchGemState){
+            curr,
+            1,
+            0,
+            0
+        };
+    }
         }
         if(match_keyboard_just_pressed(SDL_SCANCODE_C))
         {
@@ -349,15 +974,31 @@ int main(int argc, char const *argv[])
         MATCH_GEM_KIND_CLIP_RECT_HEIGHT 
         * gem_board.visible_rows 
         + match_gem_board_top_gap);
-            for(i = 0; i < gem_board.columns * gem_board.rows; i++)
+    for(i = 0; i < gem_board.columns * gem_board.rows; i++)
+    {
+        if(prev == curr) streak++;
+        else streak = 1;
+        if(streak >= 2)
+        {
+            rand_gem = (rand() % (MATCH_GEM_KIND_COUNT - 1)) + 1;
+            while(rand_gem == prev)
             {
-                gem_board.state[i] = (struct MatchGemState){
-                    (0) ? 0 : (rand() % (MATCH_GEM_KIND_COUNT - 1)) + 1,
-                    1,
-                    0,
-                    0
-                };
+                rand_gem = (rand() % (MATCH_GEM_KIND_COUNT - 1)) + 1;
             }
+        }
+        else
+        {
+            rand_gem = (rand() % (MATCH_GEM_KIND_COUNT - 1)) + 1;
+        }
+        prev = curr;
+        curr = rand_gem;
+        gem_board.state[i] = (struct MatchGemState){
+            curr,
+            1,
+            0,
+            0
+        };
+    }
         }
         if(object_animation_count == 256)
         {

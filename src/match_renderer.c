@@ -59,6 +59,7 @@ void match_renderer_copy_gem_board(
 	{
 		for(i = 0; i < gem_board.columns; i++)
 		{
+			SDL_SetRenderDrawColor(match_renderer, 255, 255, 255, 0);
 			if(!match_gem_state_is_null(current_gem)) {
 				int x = i 
 				* MATCH_GEM_KIND_CLIP_RECT_WIDTH 
@@ -69,6 +70,24 @@ void match_renderer_copy_gem_board(
 				+ current_gem->y_animation_offset 
 				+ gem_board_y_offset;
 				match_renderer_copy_gem(current_gem->kind, x, y);
+			}
+			SDL_SetRenderDrawColor(match_renderer, 0, 255, 0, 100);
+			if(current_gem->flags == 6)
+			{
+				int x = i 
+				* MATCH_GEM_KIND_CLIP_RECT_WIDTH 
+				+ current_gem->x_animation_offset 
+				+ gem_board_x_offset;
+				int y = j 
+				* MATCH_GEM_KIND_CLIP_RECT_HEIGHT 
+				+ current_gem->y_animation_offset 
+				+ gem_board_y_offset;
+				SDL_Rect rect;
+				rect.x = x;
+				rect.y = y;
+				rect.w = MATCH_GEM_KIND_CLIP_RECT_WIDTH;
+				rect.h = MATCH_GEM_KIND_CLIP_RECT_HEIGHT;
+				SDL_RenderFillRect(match_renderer, &rect);
 			}
 			current_gem++;
 		}

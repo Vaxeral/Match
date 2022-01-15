@@ -6,3 +6,7 @@ Match
 bin
 
 resources
+
+has_possible.c
+previous.c
+something.c
