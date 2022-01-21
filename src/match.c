@@ -104,6 +104,14 @@ void match_gem_swap_array_free(struct MatchGemSwapArray *array)
     free(array->data);
 }
 
+int match_swap_is_valid_pair(struct MatchGemBoard board, int a, int b)
+{
+    return b == a - 1
+        || b == a + 1
+        || b == a - board.columns
+        || b == a + board.columns;
+}
+
 // 2 * 16 * 15 for square 16 by 16 board.
 int swaps_valid[(10-1)*20+(20-1)*10];
 
@@ -146,26 +154,28 @@ else                                                                            
     pattern_current.kind = 0;                                                                               \
 }
 
+#define window_end(window, size, stride) \
+(window + (size - 1) * stride) 
+
 void match_gem_board_matches_has_possible(struct MatchGemBoard *board)
 {
     int const columns = board->columns;
     int const rows = board->rows;
     int const size = rows * columns;
-    int const streak_threshold = 3;
+    int const streak_threshold = 3; // streak >= 3
 
     struct MatchGemState *state = board->state;
-
-    int i, j, k;
+    
+    int k, i;
+    
     int majority, highest;
     int highest_previous;
-    int push_skip;
-    int subject_skip;
-    int subject_streak;
+    int streak_potential;
 
     for(i = 0; i < (10-1)*20+(20-1)*10; i++)
         swaps_valid[i] = 0;
 
-    struct MatchGemSwap subject;
+    struct MatchGemSwap candidate;
     struct MatchGemSwapArray candidates;
 
     match_gem_swap_array_init(&candidates);
@@ -177,72 +187,72 @@ void match_gem_board_matches_has_possible(struct MatchGemBoard *board)
     struct MatchGemPattern pattern_previous;
     struct MatchGemPattern pattern_current;
 
-    for(j = 0; j < rows; j++)
+    int column, row;
+
+    for(row = 0; row < rows; row++)
     {
-        window = state + 0 + j * columns;
+        window = state + 0 + row * columns;
         match_gem_board_window_histogram(1)
 
-        subject = (struct MatchGemSwap){0};
+        candidate = (struct MatchGemSwap){0};
         pattern_previous = (struct MatchGemPattern){0};
         highest_previous = 0;
-        subject_streak = 0;
+        streak_potential = 0;
 
-        for(i = 0; i < columns - (streak_threshold - 1); i++)
+        for(column = 0; column < columns - (streak_threshold - 1); column++)
         {
-            window = state + i + j * columns;
-            if(i != 0)
+            window = state + column + row * columns;
+            if(column != 0)
             {
                 histogram[(window + streak_threshold - 1)->kind]++;
             }
 
             match_gem_board_window_pattern(1)
 
-            push_skip = 0;
-            subject_skip = 0;
+            int candidate_push_skip = 0;
+            int candidate_init_skip = 0;
 
             if(pattern_current.config == MATCH_STREAK_CONFIG_NONE)
             {
-                subject_skip = 1;
+                candidate_init_skip = 1;
             }
 
             if(pattern_previous.config == MATCH_STREAK_CONFIG_NONE)
             {
-                push_skip = 1;
+                candidate_push_skip = 1;
             }
 
             if(pattern_current.config == MATCH_STREAK_CONFIG_MIDDLE)
             {
-                // subject_streak = highest_previous / 2 + highest;// subtract 1 to be general?
-                subject_streak = highest_previous - 1 + highest;
+                streak_potential = highest_previous - 1 + highest;
 
                 if(
                     pattern_current.kind == pattern_previous.kind
                     && pattern_previous.config == MATCH_STREAK_CONFIG_MIDDLE)
                 {
+                    candidate.streak_potential += 1;
 
-                    subject.streak_potential += 1;
-
-                    subject_skip = 1;
-                    push_skip = 1;
+                    candidate_init_skip = 1;
+                    candidate_push_skip = 1;
                 }
             }
             else
             {
-                subject_streak = highest;
+                streak_potential = highest;
 
                 if(
                     pattern_current.kind == pattern_previous.kind
                     && pattern_previous.config == MATCH_STREAK_CONFIG_MIDDLE)
                 {
-                    subject.streak_potential += 1;
+                    candidate.streak_potential += 1;
                 }
             }   
 
-            if(!push_skip)
+            if(!candidate_push_skip)
             {
-                match_gem_swap_array_push(&candidates, subject);
+                match_gem_swap_array_push(&candidates, candidate);
             }
-            if(!subject_skip)
+            if(!candidate_init_skip)
             {
                 struct MatchGemState *gem = NULL;
                 if(pattern_current.config == MATCH_STREAK_CONFIG_START)
@@ -286,12 +296,12 @@ void match_gem_board_matches_has_possible(struct MatchGemBoard *board)
                 else
                     edge = MATCH_GEM_BOARD_EDGE_CENTER;
 
-                subject = (struct MatchGemSwap){
+                candidate = (struct MatchGemSwap){
                     gem,
                     NULL, NULL, NULL, NULL,
                     pattern_current,
                     edge,
-                    subject_streak + 1,
+                    streak_potential + 1,
                     MATCH_STREAK_ORIENTATION_HORIZONTAL
                 };  
             }
@@ -302,75 +312,75 @@ void match_gem_board_matches_has_possible(struct MatchGemBoard *board)
         }
         if(pattern_current.config != MATCH_STREAK_CONFIG_NONE)
         {
-            match_gem_swap_array_push(&candidates, subject);
+            match_gem_swap_array_push(&candidates, candidate);
         }
     }
 
-    for(i = 0; i < columns; i++)
+    for(column = 0; column < columns; column++)
     {
-        window = state + i + 0 * columns;
+        window = state + column + 0 * columns;
         match_gem_board_window_histogram(columns)
 
-        subject = (struct MatchGemSwap){0};
+        candidate = (struct MatchGemSwap){0};
         pattern_previous = (struct MatchGemPattern){0};
         highest_previous = 0;
-        subject_streak = 0;
+        streak_potential = 0;
 
-        for(j = 0; j < rows - (streak_threshold - 1); j++)
+        for(row = 0; row < rows - (streak_threshold - 1); row++)
         {
-            window = state + i + j * columns;
-            if(j != 0)
+            window = state + column + row * columns;
+            if(row != 0)
             {
-                histogram[(window + (streak_threshold - 1) * columns)->kind]++;
+                histogram[(window + (streak_threshold - 1) * columns)->kind]++;// end of window kind in histogram ++
             }
 
             match_gem_board_window_pattern(columns)
 
-            push_skip = 0;
-            subject_skip = 0;
+            int candidate_push_skip = 0;
+            int candidate_init_skip = 0;
 
             if(pattern_current.config == MATCH_STREAK_CONFIG_NONE)
             {
-                subject_skip = 1;
+                candidate_init_skip = 1;
             }
 
             if(pattern_previous.config == MATCH_STREAK_CONFIG_NONE)
             {
-                push_skip = 1;
+                candidate_push_skip = 1;
             }
 
             if(pattern_current.config == MATCH_STREAK_CONFIG_MIDDLE)
             {
-                subject_streak = highest_previous - 1 + highest;
+                streak_potential = highest_previous - 1 + highest;
 
                 if(
                     pattern_current.kind == pattern_previous.kind
                     && pattern_previous.config == MATCH_STREAK_CONFIG_MIDDLE)
                 {
 
-                    subject.streak_potential += 1;
+                    candidate.streak_potential += 1;
 
-                    subject_skip = 1;
-                    push_skip = 1;
+                    candidate_init_skip = 1;
+                    candidate_push_skip = 1;
                 }
             }
             else
             {
-                subject_streak = highest;
+                streak_potential = highest;
 
                 if(
                     pattern_current.kind == pattern_previous.kind
                     && pattern_previous.config == MATCH_STREAK_CONFIG_MIDDLE)
                 {
-                    subject.streak_potential += 1;
+                    candidate.streak_potential += 1;
                 }
             }   
 
-            if(!push_skip)
+            if(!candidate_push_skip)
             {
-                match_gem_swap_array_push(&candidates, subject);
+                match_gem_swap_array_push(&candidates, candidate);
             }
-            if(!subject_skip)
+            if(!candidate_init_skip)
             {
                 struct MatchGemState *gem = NULL;
                 if(pattern_current.config == MATCH_STREAK_CONFIG_START)
@@ -414,12 +424,12 @@ void match_gem_board_matches_has_possible(struct MatchGemBoard *board)
                 else
                     edge = MATCH_GEM_BOARD_EDGE_CENTER;
 
-                subject = (struct MatchGemSwap){
+                candidate = (struct MatchGemSwap){
                     gem,
                     NULL, NULL, NULL, NULL, // directions to swap.  not know at this stage.
                     pattern_current,
                     edge,
-                    subject_streak + 1,
+                    streak_potential + 1,
                     MATCH_STREAK_ORIENTATION_VERTICAL
                 };  
             }
@@ -430,7 +440,7 @@ void match_gem_board_matches_has_possible(struct MatchGemBoard *board)
         }
         if(pattern_current.config != MATCH_STREAK_CONFIG_NONE)
         {
-            match_gem_swap_array_push(&candidates, subject);
+            match_gem_swap_array_push(&candidates, candidate);
         }
     }
 
